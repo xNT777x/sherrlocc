@@ -72,13 +72,6 @@ private:
 
 public:
     FakeWall(int in_req_exp) : MapElement(FAKE_WALL), req_exp(in_req_exp) {};
-
-    // Calculate in_req_exp
-    int calReqExp(int r, int c) {
-        return (r * 257 + c * 139 + 89) % 900 + 1;
-    }
-
-    }
     int getReqExp() const {
         return req_exp;
     }
@@ -104,15 +97,17 @@ public:
             int wall_row = array_walls[i].getRow();
             int wall_col = array_walls[i].getCol();
 
+            delete map[wall_row][wall_col];
             map[wall_row][wall_col] = new Wall();
         }
 
         for (int i = 0; i < num_fake_walls; i++) {
-            int fake_wall_row = array_fake_walls[i].getRow();
-            int fake_wall_col = array_fake_walls[i].getCol();
-            int in_req_exp = FakeWall::calReqExp(fake_wall_row, fake_wall_col);
+            int fw_row = array_fake_walls[i].getRow();
+            int fw_col = array_fake_walls[i].getCol();
+            int in_req_exp = (fw_row * 257 + fw_col * 139 + 89) % 900 + 1;
 
-            map[fake_wall_row][fake_wall_col] = new FakeWall(in_req_exp);
+            delete map[fw_row][fw_col];
+            map[fw_row][fw_col] = new FakeWall(in_req_exp);
         }
     };
     ~Map() {
@@ -130,7 +125,7 @@ public:
 
         MapElement* element = map[pos_row][pos_col];
 
-        if (r < 0 || c < 0 || r > num_rows || c || num_cols) {
+        if (pos_row < 0 || pos_col < 0 || pos_row >= num_rows || pos_col >= num_cols) {
             return false;
         }
         if (element->getType() == WALL) {
@@ -138,12 +133,11 @@ public:
         }
         if (element->getType() == FAKE_WALL) {
             FakeWall* fake_wall = dynamic_cast<FakeWall*>(element);
-
-            //Come back here once MovingObject is done
-            if(fake_wall && mv_obj.string == "Watson" &&)
+            if (fake_wall && mv_obj->getName() == "Watson" && mv_obj->getExp() < fake_wall->getReqExp()) return false;
         }
-
+        return true;
     }
+
     int getNumRows() const {
         return num_rows;
     }
@@ -162,7 +156,7 @@ public:
     };
 
     Position(const string& str_pos) {
-        sscanf(string.c_str(), "(%d,%d)", &r, &c);
+        sscanf(str_pos.c_str(), "(%d,%d)", &r, &c);
     };
 
     int getRow() const {
@@ -196,15 +190,17 @@ protected:
 
 public:
     MovingObject(int index, const Position pos, Map* map, const string& name = "") : index(index), pos(pos), map(map), name(name) {};
-    virtual ~MovingObject();
+    virtual ~MovingObject() {};
     virtual Position getNextPosition() = 0;
     Position getCurrentPosition() const {
         return pos;
     }
+
+    //bunch of pure virtual methods
     virtual void move() = 0;
     virtual string str() const = 0;
-    virtual int getExp() = 0;
-    virtual int getHp() = 0;
+    virtual int getExp() const = 0;
+    virtual string getName() const = 0;
 };
 
 class Sherlock : public MovingObject {
@@ -224,10 +220,22 @@ public:
         int current_col = pos.getCol();
 
         switch (direction) {
-        case 'L': current_row--;
-        case 'R': current_row++;
-        case 'U': current_col++;
-        case 'D': current_col--;
+        case 'U': {
+            current_col--;
+            break;
+        }
+        case 'L': {
+            current_row--;
+            break;
+        }
+        case 'D': {
+            current_col++;
+            break;
+        }
+        case 'R': {
+            current_row++;
+            break;
+        }
         }
         //wrap around, might remove
         if (current_row < 0) current_row = map->getNumRows() - 1;
@@ -237,76 +245,201 @@ public:
 
         moveIndex = (moveIndex + 1) % moving_rule.size();
         
-        return pos(current_row, current_col);
+        return Position(current_row, current_col);
     } 
     void move() override {
+        Position next_pos = getNextPosition();
+        if (map->isValid(next_pos, this)) {
+            pos = next_pos;
+        }
     }
-    string str() override {
 
+    string str() override {
+        return "Sherlock[index=" + to_string(index) + ";pos=" + pos.str() + ";moving_rule" + moving_rule + "]";
     }
 
 };
 
 class Watson : public MovingObject {
 private:
-    
+    string moving_rule;
+    int hp;
+    int exp;
+    int moveIndex;
 
 public:
-    Watson(int index, const string & moving_rule, const Position & init_pos, Map * map, int init_hp, int init_exp);
-    Position getNextPosition() {};
-    void move() {
-        this->getNextPosition();
+    Watson(int index, const string& moving_rule, const Position& init_pos, Map* map, int init_hp, int init_exp) : MovingObject(index, init_pos, map, "Watson"), moving_rule(moving_rule), hp(init_hp), exp(init_exp) {
+        hp = max(0, min(hp, 500));
+        exp = max(0, min(exp, 900));
+    };
+    
+    Position getNextPosition() {
+        char direction = moving_rule[moveIndex];
+        int current_row = pos.getRow();
+        int current_col = pos.getCol();
+        switch (direction) {
+        case 'U': {
+            current_col--;
+            break;
+        }
+        case 'L': {
+            current_row--;
+            break;
+        }
+        case 'D': {
+            current_col++;
+            break;
+        }
+        case 'R': {
+            current_row++;
+            break;
+        }
+        }
+        //wrap around, might remove
+        if (current_row < 0) current_row = map->getNumRows() - 1;
+        if (current_row > map->getNumRows() - 1) current_row = 0;
+        if (current_col < 0) current_col = map->getNumCols() - 1;
+        if (current_col > map->getNumCols() - 1) current_col = 0;
+
+        moveIndex = (moveIndex + 1) % moving_rule.size();
+
+        return Position(current_row, current_col);
     }
-    string str() {
-        return "Watson[index=" + this.index + ",pos=" + this.pos + ",moving_rule" + ;
+    void move() override {
+        Position next_pos = getNextPosition();
+        if (map->isValid(next_pos, this)) {
+            pos = next_pos;
+        }
+    }
+    string str() override {
+        return "Watson[index=" + to_string(index) + ";pos=" + pos.str() + ";moving_rule" + moving_rule + "]";
+    }
+    int getExp() const override {
+        return exp;
+    }
+    string getName() const override {
+        return name;
     }
 };
 
 class Criminal : public MovingObject {
 private:
-    // TODO
+    Sherlock* sherlock;
+    Watson* watson;
 
 public:
-    Criminal(int index, const Position & init_pos, Map * map, Sherlock * sherlock, Watson * watson);
-    // getNextPosition
-    // move
-    string str() {
-        return "Watson[index=" + this.index + ",pos=" + this.pos + "]";
+    Criminal(int index, const Position& init_pos, Map* map, Sherlock* sherlock, Watson* watson) : MovingObject(index, init_pos, map), sherlock(sherlock), watson(watson) {};
+    Position getNextPosition() override {
+        int current_row = pos.getRow();
+        int current_col = pos.getCol();
+        Position next_pos = pos;
+
+        int s_row = sherlock->getCurrentPosition().getRow();
+        int s_col = sherlock->getCurrentPosition().getCol();
+        int w_row = watson->getCurrentPosition().getRow();
+        int w_col = watson->getCurrentPosition().getCol();
+
+        int max_distance = -1;
+        for (int dr = -1; dr <= 1; dr++) {
+            for (int dc = -1; dc <= 1; dc++) {
+                if (abs(dr) == abs(dc)) continue; //skips current position & diagonal moves
+
+                Position c_pos(current_row + dr, current_col + dc);
+                int c_row = c_pos.getRow();
+                int c_col = c_pos.getCol();
+
+                if (!map->isValid(c_pos, this)) continue; //skips invalid moves
+
+                int distance_to_sherlock = abs(c_row - s_row) + abs(c_col - s_col);
+                int distance_to_watson = abs(c_row - w_row) + abs(c_col - w_col);
+                int total_distance = distance_to_sherlock + distance_to_watson;
+
+                if (total_distance > max_distance) {
+                    max_distance = total_distance;
+                    next_pos = c_pos;
+                }
+            }
+        }
+        return next_pos;
+    }
+    void move() override {
+        Position next_pos = getNextPosition();
+        if (map->isValid(next_pos, this)) {
+            pos = next_pos;
+        }
+    }
+    string str() override {
+        return "Criminal=[index=" + to_string(index) + ";pos=" + pos.str() + "]";
      }
-    // ...
 };
 
 class ArrayMovingObject {
 private:
-    int count = 0;
+    int count;
     int capacity;
-    MovingObject* arr_mv_objs[capacity];
+    MovingObject** arr_mv_objs;
 
 public:
-    ArrayMovingObject(int capacity) {
-        this->capacity = capacity;
-
-        for (int i = 0; i < this.capacity; i++) {
-            *arr_mv_objs
-        }
+    ArrayMovingObject(int capacity) : capacity(capacity), count(0) {
+        arr_mv_objs = new MovingObject*[capacity];
     };
 
-    ~ArrayMovingObject() ;
-    bool isFull() const;
-    bool add(MovingObject * mv_obj);
-    MovingObject * get(int index) const;
-    int size() const; // return current number of elements in the array
-    string str() const;
+    ~ArrayMovingObject() {
+        for (int i = 0; i < capacity; i++) {
+            delete arr_mv_objs[i];
+        }
+        delete[] arr_mv_objs;
+    };
+    bool isFull() const {
+        return count == capacity;
+    };
+    bool add(MovingObject* mv_obj) {
+        if (isFull) {
+            return false;
+        }
+        else {
+            arr_mv_objs[count] = mv_obj;
+            count++;
+            return true;
+        }
+    };
+    MovingObject* get(int index) const {};
+    int size() const {
+        return count;
+    }; // return current number of elements in the array
+    string str() const {
+        string str = "[ArrayMovingObject[count=" + to_string(count) + ";capacity=" + to_string(capacity);
+        for (int i = 0; i < count; i++) {
+            str += ";" + arr_mv_objs[i]->str();
+        }
+        str += "]";
+        return str;
+    };
 };
 
 class Configuration {
     friend class StudyPinkProgram;
 
 private:
-    // TODO
+    int map_num_rows;
+    int map_num_cols;
+    int num_walls;
+    Position* arr_walls;
+    int num_fake_walls;
+    Position* arr_fake_walls;
+    string sherlock_moving_rule;
+    string sherlock_init_pos;
+    string watson_moving_rule;
+    string watson_init_pos;
+    string criminal_init_pos;
+    int num_steps;
 
 public:
-    Configuration(const string & filepath);
+    Configuration(const string& filepath) {
+        ifstream file(filepath);
+        string config_line;
+
+    };
     ~Configuration();
     string str() const;
 };
